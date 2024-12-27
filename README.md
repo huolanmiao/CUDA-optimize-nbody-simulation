@@ -168,6 +168,7 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
         ...
         if (i < n)
         {
+            // 需要roll over多少个page
             int cycle_times = n / BLOCK_SIZE;
             // 当前线程计算的天体
             Body ptemp = p[i];
@@ -210,9 +211,53 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
     ```
 
 - 使用`shared memory`进行优化
-  
+    ![Local Image](./fig/mem_spaces.bmp)
+
+  - 原先每个进程负责计算一个天体与其他天体的相互作用的时候，需要从global memory加载n个天体的数据，总共需要进行$n^2$次访存操作。此时每个天体数据都被重复访问n次，如果不同进程之间能够共享从global memory取得的天体数据，可以降低访存次数，进而加快运行速度
+  - 共享内存后，访存次数变为`numberOfBlocks * n`次
+  - 共享内存的scope是`All threads in block`，Lifetime是`Block`
+    ![Local Image](./fig/mem_feature.bmp)
+    - 当allocate shared memory的时候，每个block里面都创建了一份同样大小却互相独立的share memory
+    - 当进行`__syncthreads()`操作的时候，只能保证此block里的thread在同步，此block里的shared memory是同步的
+  ```c
+  __global__ void bodyForce(Body *p, float dt, int n)
+  {
+    ...
+    // 此块对应要处理的数据块的起始位置
+    int start_block = blockIdx.x % BLOCK_STRIDE;
+    ...
+    // 需要roll over多少个page
+    int cycle_times = n / BLOCK_SIZE;
+    // 使用shared_memory 多个线程读取同一块数据进入，提升存取性能
+    // 在shared memory中，每个block都分得一块空间spos，block之间相互独立
+    __shared__ float3 spos[BLOCK_SIZE];
+    for (int block_num = start_block; block_num < cycle_times; block_num += BLOCK_STRIDE)
+    {
+        // block中每个进程负责从global memory取一个天体的数据到shared memory
+        // 最终的效果是，该page中第start_block个块的天体数据被加载到spos中，被重复利用
+        temp = p[block_num * BLOCK_SIZE + threadIdx.x];
+        spos[threadIdx.x] = make_float3(temp.x, temp.y, temp.z);
+        // 确保块内每个thread都完成自己的工作，即把它天体数据存到spos中
+        // 块内同步，防止spos提前被读取
+        __syncthreads();
+        ...
+        // for-loop 计算当前索引到的天体与BLOCK_SIZE个天体的相互作用
+        ...
+        // 确保块内每个thread都完成其自身索引到的天体，与spos中天体的相互作用的计算。然后才能进入下一次循环，加载下一批天体数据
+        // 块内同步，防止spos提前被写入
+        __syncthreads();
+    }
+  }
+  ```
+- 循环展开`#pragma unroll <Integer Constant Expression>`
+  - 减少循环控制开销
+  - 避免分支冲突
+  - 循环展开会使用更多的寄存器，编译器在编译的过程中会将确定的量优先存储在寄存器。SM会根据一个块需要消耗的寄存器大小和线程的个数去分配该SM上块的个数，当一个SM连一个块都分配不了时，就会导致内核启动不了。**所以决定循环展开的次数，需要权衡寄存器大小和线程数量之间的关系**
+
 
 # 参考
 https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html
 
 https://docs.nvidia.com/cuda/cuda-c-programming-guide/
+
+https://dorianzi.github.io/2020/04/02/cuda-shared-memory/
