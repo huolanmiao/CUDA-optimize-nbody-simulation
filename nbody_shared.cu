@@ -7,7 +7,7 @@
 
 #define SOFTENING 1e-9f
 #define BLOCK_SIZE 128
-#define BLOCK_STRIDE 4
+#define BLOCK_STRIDE 128
 
 typedef struct
 {

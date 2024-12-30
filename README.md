@@ -16,6 +16,55 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
 ./nbody_GPU_shared 4096 Bodies: average 197.147 Billion Interactions / second
 ```
 
+```
+./nbody_GPU_basic (32)
+4096 Bodies: average 32.320 Billion Interactions / second
+./nbody_GPU_basic_64
+4096 Bodies: average 32.704 Billion Interactions / second
+./nbody_GPU_basic_128
+4096 Bodies: average 32.981 Billion Interactions / second
+./nbody_GPU_basic_256
+4096 Bodies: average 31.359 Billion Interactions / second
+./nbody_GPU_basic_512
+4096 Bodies: average 28.857 Billion Interactions / second
+./nbody_GPU_basic_1024
+4096 Bodies: average 20.092 Billion Interactions / second
+./nbody_GPU_basic_2048
+4096 Bodies: average 783.982 Billion Interactions / second
+./nbody_GPU_basic_4096
+4096 Bodies: average 826.464 Billion Interactions / second
+./nbody_GPU_basic_8192
+4096 Bodies: average 704.925 Billion Interactions / second
+
+./nbody_GPU_basic_16
+4096 Bodies: average 31.649 Billion Interactions / second
+./nbody_GPU_basic_30
+4096 Bodies: average 33.268 Billion Interactions / second
+./nbody_GPU_basic_31
+4096 Bodies: average 33.852 Billion Interactions / second
+```
+
+```
+./nbody_GPU_shared_32_4
+4096 Bodies: average 202.379 Billion Interactions / second
+./nbody_GPU_shared_64_4
+4096 Bodies: average 201.166 Billion Interactions / second
+./nbody_GPU_shared （128）（4）
+4096 Bodies: average 197.147 Billion Interactions / second
+./nbody_GPU_shared_256_4
+4096 Bodies: average 178.102 Billion Interactions / second
+
+./nbody_GPU_shared_128_8
+4096 Bodies: average 227.026 Billion Interactions / second
+./nbody_GPU_shared_128_16
+4096 Bodies: average 246.724 Billion Interactions / second
+./nbody_GPU_shared_128_32
+4096 Bodies: average 256.532 Billion Interactions / second
+./nbody_GPU_shared_128_64
+4096 Bodies: average 184.163 Billion Interactions / second
+./nbody_GPU_shared_128_128
+4096 Bodies: average 126.716 Billion Interactions / second
+```
 ## 性能分析——仅简要回答，详细分析在下一部分
 
 - 通过launch kernel function，并行计算每个天体受到的引力，并行更新每个天体的坐标，nbody_parallel.cu比01-nbody.cu执行快
