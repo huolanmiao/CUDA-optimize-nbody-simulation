@@ -6,9 +6,8 @@
 #include <cuda_runtime.h>
 
 #define SOFTENING 1e-9f
-#define BLOCK_SIZE 128
-#define BLOCK_STRIDE 128
-
+#define BLOCK_SIZE 8
+#define BLOCK_STRIDE 4
 typedef struct
 {
     float x, y, z, vx, vy, vz;

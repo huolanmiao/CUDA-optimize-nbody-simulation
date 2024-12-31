@@ -6,8 +6,7 @@
 #include <cuda_runtime.h>
 
 #define SOFTENING 1e-9f
-#define BLOCK_SIZE 8192
-
+#define BLOCK_SIZE 3
 /*
  * Each body contains x, y, and z coordinate positions,
  * as well as velocities in the x, y, and z directions.
@@ -38,6 +37,7 @@ void randomizeBodies(float *data, int n)
 
 __global__ void bodyForce(Body *p, float dt, int n)
 {
+    // printf("get in kernel");
     int i = threadIdx.x + blockDim.x * blockIdx.x;
     if (i < n)
     {
@@ -139,6 +139,11 @@ int main(const int argc, const char **argv)
    * Also, the next round of `bodyForce` cannot begin until the integration is complete.
    */
         integrate_position<<<numberOfBlocks,threadsPerBlock>>>(p,dt,nBodies);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            printf("CUDA Error: %s\n", cudaGetErrorString(err));
+            // Possibly: exit(-1) if program cannot continue....
+        } 
         if(iter == nIters-1){
             cudaDeviceSynchronize();
         }
