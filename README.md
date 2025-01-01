@@ -1,5 +1,6 @@
-# 编译并运行代码
-## 编译
+# HOMEWORK3 报告
+## 编译并运行代码
+### 编译
 
 1. 编译原始CPU代码
 nvcc -std=c++11 -o nbody 01-nbody.cu
@@ -8,7 +9,7 @@ nvcc -arch=sm_80 -o nbody_GPU_basic nbody_parallel.cu
 3. 编译nbody_shared.cu, 这是做了内存优化的GPU加速版本
 nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
 
-## 运行效果
+### 运行效果
 
 ```
 ./nbody 4096 Bodies: average 0.081 Billion Interactions / second
@@ -17,7 +18,7 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
 ```
 
 
-## 性能分析——仅简要回答，详细分析在下一部分
+### 性能分析——仅简要回答，详细分析在下一部分
 
 - 通过launch kernel function，并行计算每个天体受到的引力，并行更新每个天体的坐标，nbody_parallel.cu比01-nbody.cu执行快
 - `nbody_shared.cu`比`nbody_parallel.cu`快大约六倍，主要原因是：
@@ -26,9 +27,9 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
   3. 使用shared memory减少访存次数
 - `nbody_shared.cu`比`nbody_parallel.cu`快，主要因为修改了`bodyForce`这个kernel function的实现
 - `nbody_shared.cu`比`01-nbody.cu`执行快大约1434倍，主要原因是充分利用gpu并行计算的能力，同时用`shared memory`优化访存速度
-# 分析代码与加速原因
+## 分析代码与加速原因
 
-## 01-nbody.cu-N体模拟器的运算
+### 01-nbody.cu-N体模拟器的运算
 
 - 每个天体的运动状态，是通过坐标和速度，`(x, y, z, vx, vy, vz)`来描述
 - 考虑天体之间的引力相互作用，天体运行速度是不断变化的，取微元时间`dt`，在此期间近似为匀速直线运动
@@ -78,7 +79,7 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
 - 在每一个微元运算时，先调用`bodyForce`更新每个天体的速度，然后更新每个天体的坐标
     ```c
     # 更新每个天体的速度
-    bodyForce(p, dt, nBodies); // compute interbody forces
+    bodyForce(p, dt, nBodies); 
     # 更新每个天体的坐标
     for (int i = 0; i < nBodies; i++)
         { // integrate position
@@ -89,9 +90,8 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
     ```
 - **原始版本是在cpu上串行计算，通过循环遍历每一个天体的方式，更新其速度和坐标**
   
-## nbody_parallel.cu-在gpu上并行计算
+### nbody_parallel.cu-在gpu上并行计算
 
-### 代码思路分析
 - **在gpu上并行运算，`bodyForce`中每个线程负责计算和更新一个天体的速度，`integrate_position`中每个线程负责更新一个天体的坐标**
     ```c
     // kernel function并行处理每个天体的方法，bodyForce的思路与此一致
@@ -129,21 +129,21 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
 
 - Kernel在默认流中顺序执行，所以会先计算完每个天体的速度，再开始更新每个天体的位置
     ```c
-    bodyForce<<<numberOfBlocks, threadsPerBlock>>>(p, dt, nBodies); // compute interbody forces
+    bodyForce<<<numberOfBlocks, threadsPerBlock>>>(p, dt, nBodies); 
     integrate_position<<<numberOfBlocks,threadsPerBlock>>>(p,dt,nBodies);
     ```
 
-### Nsight分析
 
-## nbody_shared.cu
+### nbody_shared.cu 代码思路分析
 
-### 代码思路分析
 
 - 用`BLOCK_STRIDE`个thread，并行计算一个天体与其他天体的相互作用，相比先前一个进程计算一个天体与其他天体的相互作用，并行度提高
   - 启动`numberOfBlocks * BLOCK_STRIDE`个block，在kernel中`BLOCK_STRIDE`个进程索引到同一个天体
     ```c
-    // launch kernel的参数中，block的数量变为原来的BLOCK_STRIDE倍，总进程数变为原来的BLOCK_STRIDE倍(threadsPerBlock未变)，用于并行计算一个天体与其他天体的相互作用
-    bodyForce<<<numberOfBlocks * BLOCK_STRIDE, threadsPerBlock>>>(d_p, dt, nBodies); // compute interbody forces
+    // launch kernel的参数中，block的数量变为原来的BLOCK_STRIDE倍
+    // 总进程数变为原来的BLOCK_STRIDE倍(threadsPerBlock未变)
+    // 用于并行计算一个天体与其他天体的相互作用
+    bodyForce<<<numberOfBlocks * BLOCK_STRIDE, threadsPerBlock>>>(d_p, dt, nBodies); 
 
     __global__ void bodyForce(Body *p, float dt, int n)
     {
@@ -199,7 +199,8 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
                 }
                 ...
             }
-            // 当前天体与其他天体的相互作用，被分到BLOCK_SIZE个进程计算，在每个进程计算完毕后，进程间的要累加起来计算合力
+            // 当前天体与其他天体的相互作用，被分到BLOCK_SIZE个进程计算
+            // 在每个进程计算完毕后，进程间的数据要累加起来计算合力
             // 由于块之间不同步，原子加保证正确性，避免竞争现象
             atomicAdd(&p[i].vx, dt * Fx);
             atomicAdd(&p[i].vy, dt * Fy);
@@ -244,7 +245,8 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
         ...
         // for-loop 计算当前索引到的天体与BLOCK_SIZE个天体的相互作用
         ...
-        // 确保块内每个thread都完成其自身索引到的天体，与spos中天体的相互作用的计算。然后才能进入下一次循环，加载下一批天体数据
+        // 确保块内每个thread都完成其自身索引到的天体，与spos中天体的相互作用的计算
+        // 然后才能进入下一次循环，加载下一批天体数据
         // 块内同步，防止spos提前被写入
         __syncthreads();
     }
@@ -255,8 +257,8 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
   - 避免分支冲突
   - 循环展开会使用更多的寄存器，编译器在编译的过程中会将确定的量优先存储在寄存器。SM会根据一个块需要消耗的寄存器大小和线程的个数去分配该SM上块的个数，当一个SM连一个块都分配不了时，就会导致内核启动不了。**所以决定循环展开的次数，需要权衡寄存器大小和线程数量之间的关系**
 
-# 实验不同的参数设置
-## 改变nbody_parallel.cu中的BLOCK SIZE
+## 实验不同的参数设置
+### 改变nbody_parallel.cu中的BLOCK SIZE
 
 | Experiment                    | Bodies | Block Size | Average Interactions / Second (Billion) |
 |-------------------------------|--------|------------|-----------------------------------------|
@@ -285,26 +287,26 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
   <figcaption>Compute Capability</figcaption>
 </figure>
 
-### 现象1-`BLOCK SIZE`取值从1-2，运行速度大致提高一倍
+#### 现象1-`BLOCK SIZE`取值从1-2，运行速度大致提高一倍
 - A100有`108`个`SM`，`Maximum number of resident blocks per SM`为`32`
 - 如果取`BLOCK SIZE = 1`，则最多并行`3456`个线程。那么由于每个`SM`能调度的`block`有限，`4096`个天体，需要分成两次，串行执行运算
 - 如果取`BLOCK SIZE = 2`，则最多并行`6912`个线程。那么`4096`个天体，所有`block`能同时分配在`108`个`SM`上执行，所以速度大致快一倍
 - GPU 一次可以调度 `SM 数量` * `每个 SM 最大 block 数`个 block，gpu完成每一批block的运算称作一个`wave`，在这个设备上一个`wave`是`3456`个block。如果`number of blocks`不能整除`wave`，则存在`tail effect`，这是当前现象的主要原因
   
-### 现象2-`BLOCK SIZE`取值从2-4，运行速度不断提高
+#### 现象2-`BLOCK SIZE`取值从2-4，运行速度不断提高
 - block内的`memory coalescing`，一个block内的线程访问相近的`global memory`，使得加载的内存块可以充分利用
 - 而`BLOCK SIZE`大于4，之后`memory coalescing`的优化已经充分发挥，所以速度几乎没有变化
   
-### 现象3-在多次运行后发现`BLOCK SIZE`取值8-256时，运行速度差距不明显
+#### 现象3-在多次运行后发现`BLOCK SIZE`取值8-256时，运行速度差距不明显
 - `Maximum number of resident blocks per SM`为32，`Maximum number of resident threads per SM`为2048，这意味着如果`BLOCK SIZE`小于64，可能无法充分利用SM上的线程资源。但是由于我们只计算`4096`个天体，所以`BLOCK SIZE`小于64不会显著影响运行速度
 - 在这个区间内，`BLOCK SIZE`变化导致`number of blocks`随之变化，但是都能够合理地分配到每个`SM`上，所以运行速度没有明显变化
 - 总之，因为只计算`4096`个天体，数据量较小，即使`occupancy`没有达到最优，一个`wave`也能完成计算，运行速度不会受到影响
 
-### 现象4-`BLOCK SIZE`取值512-1024时，运行速度显著下降
+#### 现象4-`BLOCK SIZE`取值512-1024时，运行速度显著下降
 - 每个block的寄存器数量和共享内存大小有限，如果`BLOCK SIZE`过大，结合每个线程需要的寄存器和共享内存数量，会导致资源拥挤需要排队现象
 - 如果 `block 中线程的数量` * `每个线程所需的寄存器数量`大于 `SM` 支持的寄存器最大数量，kernel 就会启动失败。
   
-### 现象5-`BLOCK SIZE`取值1025时，打印出的运行速度显著提高
+#### 现象5-`BLOCK SIZE`取值1025时，打印出的运行速度显著提高
 - A100的`Compute Capability`是8.0，`Maximum number of threads per block`为1024
 - 添加代码进行诊断，发现`CUDA Error: invalid configuration argument`，确实会导致`kernel launch`失败
     ```c
@@ -316,11 +318,11 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
     ```
 - 此时速度提高是因为没有执行运算，就直接报错返回
 
-### 现象6-`BLOCK SIZE`不是32的倍数没有显著影响运行速度
+#### 现象6-`BLOCK SIZE`不是32的倍数没有显著影响运行速度
 - 一个warp中有32个threads，即使最后一个 warp 中有效的线程数量不足 32，也要使用相同的硬件资源。理论上如果block_size不是32的倍数，可能会降低指令缓存的利用率，同时降低资源利用率
 - 但在这里并没有引起显著影响，可能还是因为数据量小，一个`wave`就能搞定
 
-### 总结：如何选取`BLOCK SIZE`
+#### 总结：如何选取`BLOCK SIZE`
 `BLOCK SIZE`设置为`Maximum number of resident threads per SM / Maximum number of resident blocks per SM`可以最大化`occupancy`，否则占不满`SM`支持的线程数。A100上这个值是`64`
 
 `BLOCK SIZE`应当是`Maximum number of resident threads per SM`的因数，以确保块上的进程能占满`SM`支持的线程数
@@ -328,7 +330,8 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
 `BLOCK SIZE`应当是32的整数倍，以确保每个`warp`都有32个线程在运行
 
 每个 block 的 32 位寄存器数量, 每个 block 的共享内存大小有上限，考虑每个thread需要的资源量，`BLOCK SIZE`个线程尽量不要超出资源上限
-## 改变nbody_shared.cu中的BLOCK SIZE与BLOCK STRIDE
+
+### 改变nbody_shared.cu中的BLOCK SIZE与BLOCK STRIDE
 | Experiment                          | Bodies | Block Size | Block Stride | Average Interactions / Second (Billion) |
 |-------------------------------------|--------|------------|--------------|-----------------------------------------|
 | `./nbody_GPU_shared_8_4`            | 4096   | 8          | 4            | 112.448                                  |
@@ -350,15 +353,16 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
 | `./nbody_GPU_shared_128_64`         | 4096   | 128        | 64           | 184.163                                  |
 | `./nbody_GPU_shared_128_128`        | 4096   | 128        | 128          | 126.716                                  |
 
-### 现象1-固定`BLOCK Stride`增加`BLOCK SIZE`运行速度先升高后降低
+#### 现象1-固定`BLOCK Stride`增加`BLOCK SIZE`运行速度先升高后降低
 - 增加`BLOCK SIZE`可以提高共享内存重复利用的次数，减少访问`global memory`的次数，提高运行速度
 - 当时此时由于使用到共享内存，每thread需要的资源更多，所以当`BLOCK SIZE`变大之后会比先前更早出现性能下降
-### 现象2-固定`BLOCK SIZE`增加`BLOCK Stride`运行速度先升高后降低
+  
+#### 现象2-固定`BLOCK SIZE`增加`BLOCK Stride`运行速度先升高后降低
 - `BLOCK Stride`增加，用于计算一个天体的线程数增加，并行度提高，导致计算速度提高
 - 由于`BLOCK SIZE`为`128`，总数据量固定为`4096`，所以有效的`BLOCK STRIDE`最大为`4094/128=32`，如果超过这个数字，会导致很多线程在`if(i<n)`处未进入运算分支，而凭空增加`scheduling overhead`和资源的占用。所以在`BLOCK Stride`超过`32`之后，运行速度开始下降
 
 
-# 参考
+## 参考
 
 https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html
 
