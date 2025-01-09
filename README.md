@@ -277,41 +277,6 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
 | `./nbody_GPU_basic_1024`       | 4096   | 1024       | 20.092                                  |
 | `./nbody_GPU_basic_1025`       | 4096   | 1025       | 783.982                                 |
 
-```
-./nbody_GPU_basic_1
-4096 Bodies: average 14.749 Billion Interactions / second
-./nbody_GPU_basic_2
-4096 Bodies: average 27.311 Billion Interactions / second
-./nbody_GPU_basic_3
-4096 Bodies: average 29.439 Billion Interactions / second
-./nbody_GPU_basic_4
-4096 Bodies: average 32.508 Billion Interactions / second
-./nbody_GPU_basic_8
-4096 Bodies: average 33.737 Billion Interactions / second
-./nbody_GPU_basic_16
-4096 Bodies: average 31.649 Billion Interactions / second
-./nbody_GPU_basic_30
-4096 Bodies: average 33.268 Billion Interactions / second
-./nbody_GPU_basic_31
-4096 Bodies: average 33.852 Billion Interactions / second
-./nbody_GPU_basic (32)
-4096 Bodies: average 32.320 Billion Interactions / second
-./nbody_GPU_basic_64
-4096 Bodies: average 32.704 Billion Interactions / second
-./nbody_GPU_basic_128
-4096 Bodies: average 32.981 Billion Interactions / second
-./nbody_GPU_basic_256
-4096 Bodies: average 31.359 Billion Interactions / second
-./nbody_GPU_basic_512
-4096 Bodies: average 28.857 Billion Interactions / second
-./nbody_GPU_basic_1023
-4096 Bodies: average 20.423 Billion Interactions / second
-./nbody_GPU_basic_1024
-4096 Bodies: average 20.092 Billion Interactions / second
-./nbody_GPU_basic_1025
-4096 Bodies: average 783.982 Billion Interactions / second
-```
-
 
 <figure style="text-align: center;">
   <img src="./fig/compute_capability.bmp" alt="compute_capability" />
@@ -352,7 +317,16 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
 ### 现象6-`BLOCK SIZE`不是32的倍数没有显著影响运行速度
 - 一个warp中有32个threads，即使最后一个 warp 中有效的线程数量不足 32，也要使用相同的硬件资源。理论上如果block_size不是32的倍数，可能会降低指令缓存的利用率，同时降低资源利用率
 - 但在这里并没有引起显著影响，可能还是因为数据量小，一个`wave`就能搞定
-  
+
+### 总结：如何选取`BLOCK SIZE`
+`BLOCK SIZE`设置为`Maximum number of resident threads per SM / Maximum number of resident blocks per SM`可以最大化`occupancy`，否则占不满`SM`支持的线程数。A100上这个值是`64`
+
+`BLOCK SIZE`应当是`Maximum number of resident threads per SM`的因数，以确保块上的进程能占满`SM`支持的线程数
+
+`BLOCK SIZE`应当是32的整数倍，以确保每个`warp`都有32个线程在运行
+
+每个 block 的 32 位寄存器数量, 每个 block 的共享内存大小有上限，考虑每个thread需要的资源量，`BLOCK SIZE`个线程尽量不要超出资源上限
+
 ## 改变nbody_shared.cu中的BLOCK SIZE与BLOCK STRIDE
 | Experiment                          | Bodies | Block Size | Block Stride | Average Interactions / Second (Billion) |
 |-------------------------------------|--------|------------|--------------|-----------------------------------------|
@@ -364,22 +338,6 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
 | `./nbody_GPU_shared_256_4`          | 4096   | 256        | 4            | 178.102                                  |
 | `./nbody_GPU_shared_512_4`          | 4096   | 512        | 4            | 113.207                                  |
 
-```
-./nbody_GPU_shared_8_4
-4096 Bodies: average 112.448 Billion Interactions / second
-./nbody_GPU_shared_16_4
-4096 Bodies: average 168.277 Billion Interactions / second
-./nbody_GPU_shared_32_4
-4096 Bodies: average 202.379 Billion Interactions / second
-./nbody_GPU_shared_64_4
-4096 Bodies: average 201.166 Billion Interactions / second
-./nbody_GPU_shared （128）（4）
-4096 Bodies: average 218.453 Billion Interactions / second
-./nbody_GPU_shared_256_4
-4096 Bodies: average 178.102 Billion Interactions / second
-./nbody_GPU_shared_512_4
-4096 Bodies: average 113.207 Billion Interactions / second
-```
 
 | Experiment                          | Bodies | Block Size | Block Stride | Average Interactions / Second (Billion) |
 |-------------------------------------|--------|------------|--------------|-----------------------------------------|
@@ -391,34 +349,13 @@ nvcc -arch=sm_80 -o nbody_GPU_shared nbody_shared.cu
 | `./nbody_GPU_shared_128_128`        | 4096   | 128        | 128          | 126.716                                  |
 
 
-```
-./nbody_GPU_shared （128）（4）
-4096 Bodies: average 197.147 Billion Interactions / second
-./nbody_GPU_shared_128_8
-4096 Bodies: average 227.026 Billion Interactions / second
-./nbody_GPU_shared_128_16
-4096 Bodies: average 246.724 Billion Interactions / second
-./nbody_GPU_shared_128_32
-4096 Bodies: average 256.532 Billion Interactions / second
-./nbody_GPU_shared_128_64
-4096 Bodies: average 184.163 Billion Interactions / second
-./nbody_GPU_shared_128_128
-4096 Bodies: average 126.716 Billion Interactions / second
-```
 ### 现象1-固定`BLOCK Stride`增加`BLOCK SIZE`运行速度先升高后降低
 - 增加`BLOCK SIZE`可以提高共享内存重复利用的次数，减少访问`global memory`的次数，提高运行速度
 - 当时此时由于使用到共享内存，每thread需要的资源更多，所以当`BLOCK SIZE`变大之后会比先前更早出现性能下降
 ### 现象2-固定`BLOCK SIZE`增加`BLOCK Stride`运行速度先升高后降低
 - `BLOCK Stride`增加，用于计算一个天体的线程数增加，并行度提高，导致计算速度提高
-- 
+- 由于`BLOCK SIZE`为`128`，总数据量固定为`4096`，所以有效的`BLOCK STRIDE`最大为`4094/128=32`，如果超过这个数字，会导致很多线程在`if(i<n)`处未进入运算分支，而凭空增加`scheduling overhead`和资源的占用。所以在`BLOCK Stride`超过`32`之后，运行速度开始下降
 
-`BLOCK SIZE`设置为`Maximum number of resident threads per SM / Maximum number of resident blocks per SM`可以最大化`occupancy`，A100上这个值是`64`
-
-`BLOCK SIZE`应当是32的整数倍，以确保每个`warp`都有32个线程在运行
-
-`BLOCK SIZE`应当是`Maximum number of resident threads per SM`的因数
-
-每个 block 的 32 位寄存器数量, 每个 block 的共享内存大小有上限，考虑每个thread需要的资源量，`BLOCK SIZE`个线程尽量不要超出资源上限
 # 参考
 
 https://docs.nvidia.com/cuda/cuda-c-best-practices-guide/index.html
